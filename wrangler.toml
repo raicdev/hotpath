@@ -1,0 +1,8 @@
+name = "hotpath-wasm"
+main = "workers/wasm.ts"
+compatibility_date = "2026-05-14"
+
+[[rules]]
+type = "CompiledWasm"
+globs = ["**/*.wasm"]
+fallthrough = false

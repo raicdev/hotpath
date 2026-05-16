@@ -1,0 +1,60 @@
+{
+  "name": "@hotpath/server",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "TypeScript DX with native and Wasm hot paths for high-throughput HTTP routing.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/raicdev/hotpath.git"
+  },
+  "homepage": "https://github.com/raicdev/hotpath#readme",
+  "bugs": {
+    "url": "https://github.com/raicdev/hotpath/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "README.md",
+    "LICENSE",
+    "src",
+    "core-c/fast_server_core.c",
+    "core/Cargo.toml",
+    "core/src",
+    "wasm-router/Cargo.toml",
+    "wasm-router/src"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./c": "./src/c.ts",
+    "./rust": "./src/rust.ts",
+    "./wasm": "./src/wasm.ts"
+  },
+  "scripts": {
+    "dev": "bun --hot examples/basic.ts",
+    "dev:rust": "bun examples/rust.ts",
+    "dev:c": "bun examples/c.ts",
+    "start": "bun examples/basic.ts",
+    "start:rust": "bun examples/rust.ts",
+    "start:c": "bun examples/c.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "bench:fast": "bun bench/fast.ts",
+    "bench:rust": "bun bench/rust.ts",
+    "bench:c": "bun bench/c.ts",
+    "bench:wasm": "bun bench/wasm.ts",
+    "bench:wasm-cluster": "bun bench/wasm-cluster.ts",
+    "bench:workers-call": "bun bench/workers-call.ts",
+    "bench:run": "bun bench/run.ts",
+    "bench:hono": "bun bench/hono.ts",
+    "bench:compare": "bun bench/compare.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/autocannon": "latest",
+    "autocannon": "latest",
+    "hono": "latest",
+    "typescript": "latest"
+  }
+}

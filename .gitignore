@@ -1,0 +1,8 @@
+node_modules/
+.fast-server/
+.hotpath/
+.wrangler/
+core/target/
+core-c/fast-server-c
+bench/results/
+wasm-router/target/
