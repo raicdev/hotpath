@@ -1,17 +1,19 @@
 # Hotpath
 
-TypeScript DXでルートを定義し、用途に応じてBun native / C core / Wasm adapterを使い分ける実験的な高速HTTPサーバーです。
+Hotpath is an experimental high-throughput HTTP toolkit with TypeScript DX and native/Wasm hot paths.
+
+It lets you define routes from TypeScript, then choose the execution path that fits the deployment target: Bun native routing, a native C HTTP core, or a Wasm adapter for `fetch(request)` runtimes such as Cloudflare Workers.
 
 ## Variants
 
 | variant | runtime | target |
 | --- | --- | --- |
-| `HotpathServer` / `FastServer` | Bun `Bun.serve()` | Bun上の軽量router |
-| `CServer` | native C core | 固定text/json/templateをサーバー側で完結 |
-| `RustServer` | Rust core | 検証用native core |
-| Wasm adapter | Workers/Bun | `fetch(request)`環境でWasm routerを呼ぶ |
+| `HotpathServer` / `FastServer` | Bun `Bun.serve()` | Lightweight Bun router |
+| `CServer` | native C core | Fixed text/json/template routes handled outside JS |
+| `RustServer` | Rust core | Experimental native core |
+| Wasm adapter | Workers/Bun | Wasm router behind a `fetch(request)` handler |
 
-C coreはHonoより大幅に速い条件があります。Workers handler内部処理も100k calls/secを超えます。ただし、`wrangler dev`のローカルHTTPサーバーや本番edgeのHTTP込み性能は別に測る必要があります。
+The C core can be much faster than Hono for routes that complete inside the native core. The Workers handler path can exceed 100k in-process calls/sec. These numbers are not interchangeable: `wrangler dev` local HTTP throughput and real Cloudflare edge throughput must be measured separately.
 
 ## Bun Native
 
@@ -45,13 +47,13 @@ await app.listen(3000);
 await new Promise(() => {});
 ```
 
-C coreはデフォルトでLinuxの物理コア数を検知して`--threads`に使います。上書きする場合:
+On Linux, the C core detects the physical core count and uses it as the default thread count. Override it with:
 
 ```bash
 FAST_SERVER_C_THREADS=8 bun run dev:c
 ```
 
-または:
+or from code:
 
 ```ts
 await app.listen(3000, { threads: 8 });
@@ -59,7 +61,7 @@ await app.listen(3000, { threads: 8 });
 
 ## Workers / Wasm
 
-WorkersではC core、`pthread`、`epoll`、`SO_REUSEPORT`は使えません。代わりに`fetch(request)`からWasm routerを呼びます。
+Cloudflare Workers cannot run the C core, `pthread`, `epoll`, or `SO_REUSEPORT`. Use the Wasm adapter instead:
 
 ```ts
 import wasmModule from "./router.wasm";
@@ -73,7 +75,7 @@ export default {
 };
 ```
 
-高速Wasm ABI:
+Fast Wasm ABI:
 
 ```text
 exports:
@@ -91,7 +93,7 @@ response:
   body bytes + response_status()
 ```
 
-互換ABIもあります:
+Compatibility ABI:
 
 ```text
 handle(ptr, len) receives:
@@ -122,7 +124,7 @@ wrangler dev local HTTP:
 ~1.3k req/s
 ```
 
-The `wrangler dev` number is not an edge benchmark. It measures the local dev server path.
+The `wrangler dev` number is not an edge benchmark. It measures the local development server path.
 
 Run a structured benchmark:
 
