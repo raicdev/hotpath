@@ -2,22 +2,27 @@ import { mkdir } from "node:fs/promises";
 
 type Target = {
   name: string;
+  description: string;
   command: string[];
   env?: Record<string, string>;
+  artifacts?: Array<"wasm-router">;
 };
 
 type Result = {
   target: string;
+  measurement: "wrk-http";
   url: string;
   threads: number;
   connections: number;
   duration: string;
+  warmupMs: number;
   requestsPerSecond: number;
   transferPerSecond: string;
   latencyAvg: string;
   latencyStdev: string;
   latencyMax: string;
   timeoutErrors: number;
+  command: string[];
   raw: string;
 };
 
@@ -27,45 +32,59 @@ const url = `http://127.0.0.1:${port}${path}`;
 const threads = Number(process.env.WRK_THREADS ?? 8);
 const connections = Number(process.env.WRK_CONNECTIONS ?? 256);
 const duration = process.env.WRK_DURATION ?? "10s";
-const selected = new Set((process.env.TARGETS ?? "c-core,hono,wasm-cluster").split(","));
+const warmupMs = Number(process.env.BENCH_WARMUP_MS ?? 0);
+const wrkHeaders = (process.env.WRK_HEADER ?? "")
+  .split("\n")
+  .map((header) => header.trim())
+  .filter(Boolean);
 
 const allTargets: Target[] = [
   {
-    name: "c-core",
-    command: [
-      "./core-c/fast-server-c",
-      "--host",
-      "0.0.0.0",
-      "--port",
-      String(port),
-      "--threads",
-      process.env.FAST_SERVER_C_THREADS ?? "6",
-      "--config",
-      "bench/c-core.tsv"
-    ]
+    name: "c-mixed",
+    description: "CServer hot routes plus TypeScript fallback/native compiled routes",
+    command: ["bun", "bench/c-mixed.ts"],
+    env: {
+      PORT: String(port),
+      SLOW_DELAY_MS: process.env.SLOW_DELAY_MS ?? "0"
+    }
   },
   {
-    name: "hono",
-    command: ["bun", "bench/hono.ts"],
-    env: { PORT: String(port) }
+    name: "hono-mixed",
+    description: "Hono equivalent of c-mixed routes/middleware",
+    command: ["bun", "bench/hono-mixed.ts"],
+    env: {
+      PORT: String(port),
+      SLOW_DELAY_MS: process.env.SLOW_DELAY_MS ?? "0"
+    }
   },
   {
     name: "wasm-cluster",
+    description: "Wasm adapter served by multiple Bun workers",
     command: ["bun", "bench/wasm-cluster.ts"],
     env: {
       PORT: String(port),
       WASM_WORKERS: process.env.WASM_WORKERS ?? "6"
-    }
-  },
-  {
-    name: "bun-fast",
-    command: ["bun", "bench/fast.ts"],
-    env: { PORT: String(port) }
+    },
+    artifacts: ["wasm-router"]
   }
 ];
-const targets = allTargets.filter((target) => selected.has(target.name));
 
-await ensureArtifacts();
+if (process.env.TARGETS === "list") {
+  for (const target of allTargets) {
+    console.log(`${target.name.padEnd(16)} ${target.description}`);
+  }
+  process.exit(0);
+}
+
+const selectedNames = (process.env.TARGETS ?? "c-mixed,hono-mixed,wasm-cluster").split(",").filter(Boolean);
+const targetByName = new Map(allTargets.map((target) => [target.name, target]));
+const unknownTargets = selectedNames.filter((name) => !targetByName.has(name));
+if (unknownTargets.length > 0) {
+  throw new Error(`Unknown benchmark target(s): ${unknownTargets.join(", ")}. Run TARGETS=list bun run bench:run`);
+}
+const targets = selectedNames.map((name) => targetByName.get(name)!);
+
+await ensureArtifacts(targets);
 const results: Result[] = [];
 
 for (const target of targets) {
@@ -80,7 +99,8 @@ for (const target of targets) {
 
   try {
     await waitForServer(url);
-    const wrk = Bun.spawnSync([
+    if (warmupMs > 0) await Bun.sleep(warmupMs);
+    const wrkCommand = [
       "wrk",
       "-t",
       String(threads),
@@ -90,13 +110,18 @@ for (const target of targets) {
       duration,
       "--latency",
       url
-    ]);
+    ];
+    for (const header of wrkHeaders) {
+      wrkCommand.push("-H", header);
+    }
+    const wrk = Bun.spawnSync(wrkCommand);
     const raw = new TextDecoder().decode(wrk.stdout);
     if (!wrk.success) {
       throw new Error(new TextDecoder().decode(wrk.stderr));
     }
 
     const result = parseWrk(target.name, raw);
+    result.command = wrkCommand;
     results.push(result);
     console.log(
       `${target.name}: ${result.requestsPerSecond.toLocaleString()} req/s, avg ${result.latencyAvg}, timeouts ${result.timeoutErrors}`
@@ -120,16 +145,19 @@ function parseWrk(target: string, raw: string): Result {
 
   return {
     target,
+    measurement: "wrk-http",
     url,
     threads,
     connections,
     duration,
+    warmupMs,
     requestsPerSecond: Number(requests?.[1] ?? 0),
     transferPerSecond: transfer?.[1]?.trim() ?? "",
     latencyAvg: latency?.[1] ?? "",
     latencyStdev: latency?.[2] ?? "",
     latencyMax: latency?.[3] ?? "",
     timeoutErrors: Number(socketErrors?.[1] ?? 0),
+    command: [],
     raw
   };
 }
@@ -149,37 +177,25 @@ async function waitForServer(endpoint: string): Promise<void> {
   throw new Error(`Server did not start: ${endpoint}`);
 }
 
-async function ensureArtifacts(): Promise<void> {
-  if (!(await Bun.file("core-c/fast-server-c").exists())) {
-    const build = Bun.spawnSync([
-      "cc",
-      "-O3",
-      "-march=native",
-      "-std=c11",
-      "-Wall",
-      "-Wextra",
-      "-pthread",
-      "core-c/fast_server_core.c",
-      "-o",
-      "core-c/fast-server-c"
-    ]);
-    if (!build.success) throw new Error(new TextDecoder().decode(build.stderr));
-  }
+async function ensureArtifacts(targets: Target[]): Promise<void> {
+  const artifacts = new Set(targets.flatMap((target) => target.artifacts ?? []));
 
-  if (
-    !(await Bun.file(
-      "wasm-router/target/wasm32-unknown-unknown/release/fast_server_wasm_router.wasm"
-    ).exists())
-  ) {
-    const build = Bun.spawnSync([
-      "cargo",
-      "build",
-      "--release",
-      "--target",
-      "wasm32-unknown-unknown",
-      "--manifest-path",
-      "wasm-router/Cargo.toml"
-    ]);
-    if (!build.success) throw new Error(new TextDecoder().decode(build.stderr));
+  if (artifacts.has("wasm-router")) {
+    if (
+      !(await Bun.file(
+        "wasm-router/target/wasm32-unknown-unknown/release/fast_server_wasm_router.wasm"
+      ).exists())
+    ) {
+      const build = Bun.spawnSync([
+        "cargo",
+        "build",
+        "--release",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--manifest-path",
+        "wasm-router/Cargo.toml"
+      ]);
+      if (!build.success) throw new Error(new TextDecoder().decode(build.stderr));
+    }
   }
 }

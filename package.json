@@ -20,35 +20,30 @@
     "LICENSE",
     "src",
     "core-c/fast_server_core.c",
-    "core/Cargo.toml",
-    "core/src",
+    "core-c/router_lib.c",
     "wasm-router/Cargo.toml",
     "wasm-router/src"
   ],
   "exports": {
     ".": "./src/index.ts",
+    "./native": "./src/native.ts",
     "./c": "./src/c.ts",
-    "./rust": "./src/rust.ts",
     "./wasm": "./src/wasm.ts"
   },
   "scripts": {
     "dev": "bun --hot examples/basic.ts",
-    "dev:rust": "bun examples/rust.ts",
     "dev:c": "bun examples/c.ts",
+    "dev:fast": "bun examples/cross-platform-fast.ts",
     "start": "bun examples/basic.ts",
-    "start:rust": "bun examples/rust.ts",
     "start:c": "bun examples/c.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "bench:fast": "bun bench/fast.ts",
-    "bench:rust": "bun bench/rust.ts",
-    "bench:c": "bun bench/c.ts",
-    "bench:wasm": "bun bench/wasm.ts",
+    "bench:list": "TARGETS=list bun bench/run.ts",
+    "bench:mixed": "TARGETS=c-mixed,hono-mixed,wasm-cluster bun bench/run.ts",
+    "bench:c-mixed": "bun bench/c-mixed.ts",
     "bench:wasm-cluster": "bun bench/wasm-cluster.ts",
-    "bench:workers-call": "bun bench/workers-call.ts",
     "bench:run": "bun bench/run.ts",
-    "bench:hono": "bun bench/hono.ts",
-    "bench:compare": "bun bench/compare.ts"
+    "bench:hono-mixed": "bun bench/hono-mixed.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

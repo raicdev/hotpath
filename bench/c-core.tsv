@@ -1,6 +1,0 @@
-GET	/	200	text/plain; charset=utf-8	ok
-HEAD	/	200	text/plain; charset=utf-8	
-GET	/hello/:name	200	text/plain; charset=utf-8	hello {name}
-HEAD	/hello/:name	200	text/plain; charset=utf-8	
-GET	/json	200	application/json; charset=utf-8	{"ok":true}
-HEAD	/json	200	application/json; charset=utf-8	
